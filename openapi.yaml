@@ -601,8 +601,12 @@ components:
           oneOf:
             - type: boolean
             - type: string
-          description: Whether password must be digits only. Accepts bool or "J"/"T"/"Y"/"1".
+          description: Whether password must be digits only. Accepts boolean or string values such as "J"/"T"/"Y"/"1" (yes) or "N" (no).
           example: false
+        webPwLaenge:
+          type: integer
+          description: Maximum web password length enforced by the backend.
+          example: 10
         sepaRegOhneNamen:
           oneOf:
             - type: boolean
@@ -868,8 +872,8 @@ components:
           example: "1-22-27"
         datum:
           type: string
-          description: Transaction date and time (dd.MM HH:mm or dd.MM.yyyy HH:mm:ss)
-          example: "14.03 19:14"
+          description: 'Transaction date and time. Formats used: "dd.MM HH:mm", "dd.MM.yyyy HH:mm", or "dd.MM.yyyy HH:mm:ss".'
+          example: "16.04.2026 12:37"
         ortName:
           type: string
           description: Location / point of sale name
