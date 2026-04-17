@@ -239,6 +239,11 @@ paths:
       description: |
         Retrieves transaction records for the specified date range. Transactions
         include sales, card top-ups, and other operations at points of sale.
+
+        The start date is limited by the `lTransTage` value from the login response, which defines how many days of transaction history are available.  
+        Any request for a date range will only return data to earliest available date based on this limit.  
+        Requests with `datumVon` before that will simply return no data for the unavailable period, but will not result in an error.  
+        For example, if `lTransTage` is 180 and today is 17.04.2026, the earliest available date would be 20.10.2025. 
       operationId: getTransactions
       parameters:
         - $ref: "#/components/parameters/karteNr"
@@ -278,10 +283,12 @@ paths:
       summary: Get transaction positions (line items)
       description: |
         Retrieves individual line items (positions) for transactions in the specified
-        date range. These are joined client-side with transaction records via `transFullId`.
+        date range. These are joined client-side with transaction records via `transFullId` from `/TL1/TLM/KASVC/TRANS`.
 
-        The start date is limited by the `lTransTage` value from the login response, which defines how many days of transaction history are available.
-        Any request for a date range will only return data to earliest available date based on this limit. For example, if `lTransTage` is 180 and today is 17.04.2026, the earliest available date would be 20.10.2025. Requests with `datumVon` before that will simply return no data for the unavailable period, but will not result in an error.
+        The start date is limited by the `lTransTage` value from the login response, which defines how many days of transaction history are available.  
+        Any request for a date range will only return data to earliest available date based on this limit.  
+        Requests with `datumVon` before that will simply return no data for the unavailable period, but will not result in an error.  
+        For example, if `lTransTage` is 180 and today is 17.04.2026, the earliest available date would be 20.10.2025. 
       operationId: getTransactionPositions
       parameters:
         - $ref: "#/components/parameters/karteNr"
