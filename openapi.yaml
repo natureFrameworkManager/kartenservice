@@ -68,7 +68,7 @@ paths:
         "201":
           description: Client registered successfully. REST operations enabled.
         "401":
-          description: Invalid client ID or registration key.
+          $ref: "#/components/responses/AuthBasicError"
         "503":
           description: REST backend unavailable. Application falls back to offline mode.
 
@@ -106,6 +106,8 @@ paths:
                   text: "Bitte geben Sie Ihre Kartennummer und Ihr Kennwort ein."
                 - id: "loginUsername"
                   text: "Kartennummer"
+        "401":
+          $ref: "#/components/responses/AuthBasicError"
 
   /TL1/TLM/KASVC/LOGIN:
     post:
@@ -150,11 +152,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/LoginResponse"
         "401":
-          description: Invalid card number or password.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+          $ref: "#/components/responses/AuthBasicError"
         "403":
           description: Card internet access is not active.
         "408":
@@ -187,9 +185,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/CardInfo"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
         "403":
-          description: Forbidden - access denied
+          $ref: "#/components/responses/AuthTokenMissingResponse"
         "404":
           description: Card not found
 
@@ -222,7 +220,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
         "500":
           description: Server error. Response body contains error message text.
           content:
@@ -267,9 +265,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/Transaction"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
         "403":
-          description: Forbidden - access denied
+          $ref: "#/components/responses/AuthTokenMissingResponse"
 
   /TL1/TLM/KASVC/TRANSPOS:
     get:
@@ -307,9 +305,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/TransactionPosition"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
         "403":
-          description: Forbidden - access denied
+          $ref: "#/components/responses/AuthTokenMissingResponse"
 
     put:
       tags: [Transactions]
@@ -329,10 +327,12 @@ paths:
       responses:
         "200":
           description: Rating updated successfully
-        "401":
-          description: Not authenticated or session expired
         "400":
           description: Invalid rating value or position not ratable
+        "401":
+          $ref: "#/components/responses/AuthBasicError"
+        "403":
+          $ref: "#/components/responses/AuthTokenMissingResponse"
 
   /TL1/TLM/KASVC/BONUS:
     get:
@@ -354,9 +354,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/BonusItem"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
         "403":
-          description: Forbidden - access denied
+          $ref: "#/components/responses/AuthTokenMissingResponse"
 
   /TL1/TLM/KASVC/KATRPDF:
     get:
@@ -396,9 +396,9 @@ paths:
                 type: string
                 format: binary
         "401":
-          description: Invalid or expired authentication
+          $ref: "#/components/responses/AuthBasicError"
         "403":
-          description: Forbidden - access denied
+          $ref: "#/components/responses/AuthTokenMissingResponse"
         "404":
           description: Receipt not found
         "500":
@@ -456,7 +456,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardInfo"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
 
   /TL1/PayPal/singlepayment:
     get:
@@ -502,7 +502,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardInfo"
         "401":
-          description: Not authenticated or session expired
+          $ref: "#/components/responses/AuthBasicError"
 
 components:
   securitySchemes:
@@ -1073,3 +1073,17 @@ components:
         responseText:
           type: string
           description: Human-readable error message
+  responses:
+    AuthBasicError:
+      description: Basic authentication error returned when HTTP Basic auth is missing or incorrect.
+      content:
+        text/plain:
+          examples:
+            missingBasic:
+              summary: Missing basic auth
+              value: "Authentication required"
+            wrongPassword:
+              summary: Wrong password
+              value: "Authentication required, wrong password"
+    AuthTokenMissingResponse:
+      description: Returned when the `authToken` query parameter is missing or invalid. No content is returned.
