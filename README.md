@@ -1,4 +1,4 @@
-# Kartenservice — OpenAPI specification
+# Kartenservice - OpenAPI specification
 
 This repository contains the OpenAPI specification for the Kartenservice API.
 
