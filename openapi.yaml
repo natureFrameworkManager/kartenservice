@@ -1,0 +1,1018 @@
+openapi: 3.0.3
+info:
+  title: Kartenservice REST API
+  description: |
+    REST API for the Kartenservice (Card Service) web application used by German student unions
+    (Studentenwerk) to manage prepaid chipcard accounts. The API supports authentication, card
+    management, transaction queries, bonus programs, recharge setup (SEPA/PayPal), and receipt
+    PDF downloads.
+
+    All endpoints under `/TL1/TLM/KASVC/` require a valid `authToken` obtained during login.
+    The `karteNr` parameter is also appended to all authenticated requests.
+  version: 3.3.3.2
+  contact:
+    name: Kartenservice
+
+servers:
+  - url: https://kartenservice.studentenwerk-leipzig.de
+    description: Production
+  - url: http://localhost
+    description: Local / Demo
+
+tags:
+  - name: Authentication
+    description: Client registration, login, and logout
+  - name: Card
+    description: Card information and management operations
+  - name: Transactions
+    description: Transaction history and position details
+  - name: Bonus
+    description: Bonus program status
+  - name: PayPal
+    description: PayPal billing agreement management
+  - name: Resources
+    description: Text resources and static assets
+
+security:
+  - basicAuth: []
+    authToken: []
+
+paths:
+  /TL1/TLA/ClientReg:
+    post:
+      tags: [Authentication]
+      summary: Register REST client
+      description: |
+        Registers the client application with the TL1 REST backend.
+        Must be called before any other API requests. Returns an auth token
+        that enables subsequent REST operations.
+      operationId: registerClient
+      security:
+        - basicAuth: []
+      parameters:
+        - name: ClientID
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 20
+          description: Client application identifier
+        - name: RegKey
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "4G3hQj7E5ivIzbXNlt4Eu8rLvRb3Dy4g"
+          description: Client registration key
+      responses:
+        "200":
+          description: Client registered successfully. REST operations enabled.
+        "401":
+          description: Invalid client ID or registration key.
+        "503":
+          description: REST backend unavailable. Application falls back to offline mode.
+
+  /TL1/TLM/KASVC/TEXTRES:
+    get:
+      tags: [Resources]
+      summary: Get localized text resources
+      description: |
+        Returns all user-facing text strings for the specified language.
+        Used for i18n support. Loaded during the initialization phase before login.
+      operationId: getTextResources
+      security:
+        - basicAuth: []
+      parameters:
+        - name: LangId
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "de"
+          description: Language code (e.g., "de", "en"). Defaults to server default.
+      responses:
+        "200":
+          description: Array of text resource objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TextResource"
+              example:
+                - id: "loginTitle"
+                  text: "Kartenservice"
+                - id: "loginGreeting"
+                  text: "Bitte geben Sie Ihre Kartennummer und Ihr Kennwort ein."
+                - id: "loginUsername"
+                  text: "Kartennummer"
+
+  /TL1/TLM/KASVC/LOGIN:
+    post:
+      tags: [Authentication]
+      summary: Authenticate user
+      description: |
+        Authenticates a cardholder using their card number and password.
+        On success, returns the session configuration including an `authToken`
+        for subsequent requests, feature flags, operational limits, and card metadata.
+      operationId: login
+      security:
+        - basicAuth: []      
+      parameters:
+        - name: karteNr
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9]+$"
+          description: The card number (digits only)
+        - name: datenformat
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [JSON]
+            default: JSON
+          description: Response format (always JSON)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful. Returns session configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid card number or password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Card internet access is not active.
+        "408":
+          description: Login request timed out.
+
+  /TL1/TLM/KASVC/KARTE:
+    get:
+      tags: [Card]
+      summary: Get card information
+      description: |
+        Retrieves the full card data model including account details, balance,
+        bank information, PayPal status, and lock state.
+      operationId: getCardInfo
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      responses:
+        "200":
+          description: Card information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardInfo"
+        "401":
+          description: Not authenticated or session expired
+        "404":
+          description: Card not found
+
+    put:
+      tags: [Card]
+      summary: Update card data
+      description: |
+        Performs a card management operation. The `vgTyp` field in the request body
+        determines the type of operation (password change, card lock, recharge setup, etc.).
+      operationId: updateCardInfo
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CardUpdateRequest"
+      responses:
+        "200":
+          description: Operation completed successfully. Returns updated card data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardInfo"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated or session expired
+        "500":
+          description: Server error. Response body contains error message text.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Fehler bei der Verarbeitung der Anfrage"
+
+  /TL1/TLM/KASVC/TRANS:
+    get:
+      tags: [Transactions]
+      summary: Get transactions
+      description: |
+        Retrieves transaction records for the specified date range. Transactions
+        include sales, card top-ups, and other operations at points of sale.
+      operationId: getTransactions
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+        - name: datumVon
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{2}\\.\\d{2}\\.\\d{4}$"
+            example: "01.01.2026"
+          description: Start date (dd.MM.yyyy format)
+        - name: datumBis
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{2}\\.\\d{2}\\.\\d{4}$"
+            example: "17.04.2026"
+          description: End date (dd.MM.yyyy format). The client adds one day before sending to make this exclusive.
+      responses:
+        "200":
+          description: Array of transaction records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+        "401":
+          description: Not authenticated or session expired
+
+  /TL1/TLM/KASVC/TRANSPOS:
+    get:
+      tags: [Transactions]
+      summary: Get transaction positions (line items)
+      description: |
+        Retrieves individual line items (positions) for transactions in the specified
+        date range. These are joined client-side with transaction records via `transFullId`.
+      operationId: getTransactionPositions
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+        - name: datumVon
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{2}\\.\\d{2}\\.\\d{4}$"
+            example: "01.01.2026"
+          description: Start date (dd.MM.yyyy format)
+        - name: datumBis
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^\\d{2}\\.\\d{2}\\.\\d{4}$"
+            example: "17.04.2026"
+          description: End date (dd.MM.yyyy format)
+      responses:
+        "200":
+          description: Array of transaction position records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionPosition"
+        "401":
+          description: Not authenticated or session expired
+
+    put:
+      tags: [Transactions]
+      summary: Update transaction position rating
+      description: |
+        Updates the rating for a specific transaction position. The rating is encoded
+        as a bitmask in the `bewertung` field.
+      operationId: updateTransactionPositionRating
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RatingUpdateRequest"
+      responses:
+        "200":
+          description: Rating updated successfully
+        "401":
+          description: Not authenticated or session expired
+        "400":
+          description: Invalid rating value or position not ratable
+
+  /TL1/TLM/KASVC/BONUS:
+    get:
+      tags: [Bonus]
+      summary: Get bonus program status
+      description: |
+        Retrieves all bonus programs and their current status for the authenticated card.
+        Returns a flat list of bonus items grouped by program, including redeemed items.
+      operationId: getBonusStatus
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      responses:
+        "200":
+          description: Array of bonus program items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BonusItem"
+        "401":
+          description: Not authenticated or session expired
+
+  /TL1/TLM/KASVC/KATRPDF:
+    get:
+      tags: [Transactions]
+      summary: Download receipt PDF
+      description: |
+        Downloads a PDF receipt for a specific transaction. The `dateiablageId`
+        identifies the archived PDF document. Authentication is provided via
+        query parameters rather than headers for direct browser download.
+      operationId: getReceiptPdf
+      parameters:
+        - name: karteNr
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Card number
+        - name: loginToken
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "KASVC:zKv5yE1LZUmvW29I"
+          description: Static login token (username:password)
+        - name: dateiablageId
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: File archive ID of the receipt document
+      responses:
+        "200":
+          description: PDF receipt file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Invalid or expired authentication
+        "404":
+          description: Receipt not found
+
+  /TL1/PayPal/agreement:
+    get:
+      tags: [PayPal]
+      summary: Create PayPal billing agreement (redirect)
+      description: |
+        Redirects the user to PayPal to create a billing agreement for automatic
+        card reloading. The serialized card model is passed as a query parameter.
+        Only available when the app is served from the same domain (not cross-domain).
+      operationId: createPaypalAgreement
+      parameters:
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "S0FTVkM6ekt2NXlFMUxaVW12VzI5SQ=="
+          description: Base64-encoded service credentials
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+          description: JSON-serialized card model (excluding webPasswort)
+      responses:
+        "302":
+          description: Redirect to PayPal authorization page
+
+  /TL1/PayPal/agreement/remove:
+    put:
+      tags: [PayPal]
+      summary: Remove PayPal billing agreement
+      description: |
+        Cancels an existing PayPal automatic billing agreement. The card's
+        PayPal state is reset on the server.
+      operationId: removePaypalAgreement
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      responses:
+        "200":
+          description: Agreement removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardInfo"
+        "401":
+          description: Not authenticated or session expired
+
+  /TL1/PayPal/singlepayment:
+    get:
+      tags: [PayPal]
+      summary: Create PayPal single payment (redirect)
+      description: |
+        Redirects the user to PayPal to authorize a one-time card reload payment.
+        Only available when the app is served from the same domain.
+      operationId: createPaypalSinglePayment
+      parameters:
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Base64-encoded service credentials
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+          description: JSON-serialized card model (excluding webPasswort)
+      responses:
+        "302":
+          description: Redirect to PayPal authorization page
+
+  /TL1/PayPal/singlepayment/remove:
+    put:
+      tags: [PayPal]
+      summary: Remove PayPal single payment authorization
+      description: |
+        Cancels an existing PayPal one-time payment authorization.
+      operationId: removePaypalSinglePayment
+      parameters:
+        - $ref: "#/components/parameters/karteNr"
+      responses:
+        "200":
+          description: Authorization removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardInfo"
+        "401":
+          description: Not authenticated or session expired
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: |
+        Static service credentials: `KASVC:zKv5yE1LZUmvW29I`
+        (Base64: `S0FTVkM6ekt2NXlFMUxaVW12VzI5SQ==`)
+    authToken:
+      type: apiKey
+      in: query
+      name: authToken
+
+  parameters:
+    karteNr:
+      name: karteNr
+      in: query
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9]+$"
+      description: Card number (digits only)
+
+  schemas:
+    TextResource:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          type: string
+          description: Resource identifier key
+          example: "loginTitle"
+        text:
+          type: string
+          description: Localized text value
+          example: "Kartenservice"
+
+    LoginRequest:
+      type: object
+      required: [BenutzerID, Passwort]
+      properties:
+        BenutzerID:
+          type: string
+          description: Card number (digits only)
+          example: "1582001"
+        Passwort:
+          type: string
+          description: User password
+          format: password
+          example: "1234"
+
+    LoginResponse:
+      type: object
+      description: |
+        Session configuration returned on successful login. Contains the auth token,
+        feature flags, operational limits, and application metadata.
+      properties:
+        authToken:
+          type: string
+          description: |
+            Session token for subsequent authenticated requests.
+            The backend appends and manages this token internally after login;
+            it is intentionally not modeled as a separate user-entered security field
+            in this OpenAPI document.
+        titel:
+          type: string
+          description: Application title
+          example: "Kartenservice"
+        karteNr:
+          type: string
+          description: Authenticated card number
+          example: "1582001"
+        funktionen:
+          type: integer
+          description: |
+            Feature flag bitmask. Each bit enables/disables a specific feature:
+            - Bit 0 (1): Card lock
+            - Bit 1 (2): SEPA lock
+            - Bit 2 (4): Ratings
+            - Bit 3 (8): Bonus programs
+            - Bit 4 (16): PayPal
+            - Bit 5 (32): Direct debit init
+            - Bit 6 (64): DDA not changeable
+            - Bit 7 (128): DDT not changeable
+            - Bit 8 (256): Disable fast-load
+            - Bit 10 (1024): Contact data editing
+          example: 65535
+        optionen:
+          type: integer
+          description: |
+            Options bitmask:
+            - Bit 1 (2): SEPA registration requires address
+          example: 0
+        numPasswort:
+          oneOf:
+            - type: boolean
+            - type: string
+          description: Whether password must be digits only. Accepts bool or "J"/"T"/"Y"/"1".
+          example: false
+        sepaRegOhneNamen:
+          oneOf:
+            - type: boolean
+            - type: string
+          description: Whether SEPA registration can omit account holder name.
+          example: false
+        lTransTage:
+          type: integer
+          description: Maximum number of days of transaction history available
+          default: 180
+          example: 365
+        minBetragAufwertung:
+          type: number
+          description: Minimum recharge amount in EUR
+          default: 1
+          example: 3
+        maxBetragAufwertung:
+          type: number
+          description: Maximum recharge amount in EUR
+          default: 999
+          example: 18
+        minAbRestguthaben:
+          type: number
+          description: Minimum remaining balance threshold in EUR
+          default: 0
+          example: 0
+        maxAbRestguthaben:
+          type: number
+          description: Maximum remaining balance threshold in EUR
+          default: 0
+          example: 0
+        betragAufwertung:
+          type: number
+          description: Default recharge amount in EUR
+          example: 10
+        abRestguthaben:
+          type: number
+          description: Default remaining balance trigger in EUR
+          example: 1
+
+    CardInfo:
+      type: object
+      description: Complete card data model
+      properties:
+        id:
+          type: integer
+          description: Internal card ID
+          example: 1415
+        karteNr:
+          type: string
+          description: Card number
+          example: "1582001"
+        webPasswort:
+          type: string
+          description: Password (write-only, not returned in GET responses)
+          writeOnly: true
+        meldungsText:
+          type: string
+          nullable: true
+          description: Message/notice text displayed on card info page
+          example: "Demo Modus"
+        zahlungsrueckstand:
+          type: number
+          nullable: true
+          description: Outstanding payment balance in EUR
+          example: null
+        betragAufwertung:
+          type: number
+          description: Configured auto-recharge amount in EUR
+          example: 15
+        abRestguthaben:
+          type: number
+          description: Minimum balance trigger for auto-recharge in EUR
+          example: 2
+        anzTrans:
+          type: integer
+          description: Total number of transactions on this card
+          example: 145
+        gesperrt:
+          type: boolean
+          description: Whether the card payment function is locked
+          example: false
+        bankeinzug:
+          type: boolean
+          description: Whether SEPA direct debit is active
+          example: true
+        internet:
+          type: boolean
+          description: Whether internet access is enabled for this card
+          example: true
+        payPal:
+          type: boolean
+          description: Whether PayPal billing agreement is active
+          example: false
+        payPalSaldo:
+          type: number
+          nullable: true
+          description: Current PayPal balance in EUR
+          example: 0
+        einmalzahlung:
+          type: boolean
+          description: Whether a one-time payment is currently authorized
+          example: false
+        einmalzahlungPayPal:
+          type: boolean
+          description: One-time PayPal payment active (server-side field, decomposed into payPal + einmalzahlung)
+        einmalzahlungLastschrift:
+          type: boolean
+          description: One-time SEPA payment active (server-side field, decomposed into bankeinzug + einmalzahlung)
+        blz:
+          type: string
+          nullable: true
+          description: BIC/BLZ bank identifier ("-" treated as null)
+          example: "68090000"
+        bankkonto:
+          type: string
+          nullable: true
+          description: IBAN or account number
+          example: "123xxxxx"
+        kontoInhaber:
+          type: string
+          nullable: true
+          description: |
+            Account holder info. Newline-separated: first line is name,
+            remaining lines are address. Parsed client-side into
+            `inhaberName` and `inhaberAdresse`.
+          example: "Max Mustermann\nMusterstraße 1\n12345 Musterstadt"
+        sepaCI:
+          type: string
+          nullable: true
+          description: SEPA creditor identifier
+        sepaMandat:
+          type: string
+          nullable: true
+          description: SEPA mandate number
+        agreementId:
+          type: string
+          nullable: true
+          description: PayPal billing agreement ID
+        authorizationId:
+          type: string
+          nullable: true
+          description: PayPal authorization ID
+        payerId:
+          type: string
+          nullable: true
+          description: PayPal payer ID
+        kontaktDaten:
+          type: string
+          nullable: true
+          description: Contact data string (comma-separated name, address, phone)
+        dateiablageId:
+          type: integer
+          nullable: true
+          description: File archive ID (used for PDF receipt downloads)
+        vgTyp:
+          type: integer
+          description: Operation type code (only in PUT requests)
+          writeOnly: true
+
+    CardUpdateRequest:
+      type: object
+      description: |
+        Card update request. The `vgTyp` field determines the operation type.
+        Only include fields relevant to the specific operation.
+      required: [vgTyp]
+      properties:
+        vgTyp:
+          type: integer
+          description: |
+            Operation type:
+            - 1: Lock card payment function
+            - 3: Set up automatic SEPA direct debit
+            - 4: Cancel automatic SEPA direct debit
+            - 5: Update recharge amounts / contact data
+            - 19: Change password
+            - 22: Set up one-time SEPA direct debit
+            - 24: Cancel one-time SEPA direct debit
+            - 25: Delete all payment data
+          enum: [1, 3, 4, 5, 19, 22, 24, 25]
+        gesperrt:
+          type: boolean
+          description: Set to true to lock card (vgTyp 1)
+        webPasswort:
+          type: string
+          description: New password (vgTyp 19). Min 4 chars, max 10.
+          minLength: 4
+          maxLength: 10
+        betragAufwertung:
+          type: number
+          description: Recharge amount in EUR (vgTyp 3, 5, 22)
+        abRestguthaben:
+          type: number
+          description: Minimum balance trigger in EUR (vgTyp 3, 5)
+        bankeinzug:
+          type: boolean
+          description: SEPA direct debit flag (vgTyp 3, 4, 22, 24)
+        einmalzahlung:
+          type: boolean
+          description: One-time payment flag (vgTyp 22)
+        kontoInhaber:
+          type: string
+          nullable: true
+          description: |
+            Account holder name and address, newline-separated (vgTyp 3, 22).
+            Set to null with vgTyp 25 to delete.
+        bankkonto:
+          type: string
+          nullable: true
+          description: IBAN (vgTyp 3, 22). Spaces removed, uppercased. Null for vgTyp 25.
+        blz:
+          type: string
+          nullable: true
+          description: BIC (vgTyp 3, 22). Uppercased. Null for vgTyp 25.
+        payerId:
+          type: string
+          nullable: true
+          description: PayPal payer ID. Null for vgTyp 25.
+        kontaktDaten:
+          type: string
+          description: Contact data string (vgTyp 5 for contact update)
+
+    Transaction:
+      type: object
+      description: A single transaction record (sale, top-up, etc.)
+      properties:
+        mandantId:
+          type: integer
+          description: Tenant/client ID
+          example: 1
+        id:
+          type: integer
+          description: Transaction sequence number
+          example: 1
+        transFullId:
+          type: string
+          description: Composite transaction identifier (mandantId-ortId-seqNr)
+          example: "1-22-27"
+        datum:
+          type: string
+          description: Transaction date and time (dd.MM HH:mm or dd.MM.yyyy HH:mm:ss)
+          example: "14.03 19:14"
+        ortName:
+          type: string
+          description: Location / point of sale name
+          example: "Mensa Hochallee"
+        kaName:
+          type: string
+          description: Cash register or device name
+          example: "Kasse 1"
+        typName:
+          type: string
+          description: Transaction type name
+          enum: [Verkauf, Karte, Einnahme]
+          example: "Verkauf"
+        zahlBetrag:
+          type: number
+          description: Payment amount in EUR (negative = debit/purchase, positive = credit/top-up)
+          example: -10.90
+        dateiablageId:
+          type: integer
+          nullable: true
+          description: File archive ID for PDF receipt (null if no receipt available)
+        bonusInfo:
+          type: string
+          nullable: true
+          description: Bonus information text
+
+    TransactionPosition:
+      type: object
+      description: A line item within a transaction
+      properties:
+        mandantId:
+          type: integer
+          description: Tenant/client ID
+          example: 1
+        id:
+          type: integer
+          description: Position record ID
+          example: 65
+        transFullId:
+          type: string
+          description: Parent transaction composite ID (for client-side join)
+          example: "1-22-27"
+        posId:
+          type: integer
+          description: Position sequence number within the transaction
+          example: 1
+        name:
+          type: string
+          description: Article / item name
+          example: "Menü 1"
+        menge:
+          type: integer
+          description: Quantity
+          example: 1
+        epreis:
+          type: number
+          description: Unit price in EUR
+          example: 2.00
+        rabatt:
+          type: number
+          nullable: true
+          description: Discount amount in EUR (negative value)
+          example: -0.20
+        gpreis:
+          type: number
+          description: Total price in EUR (menge × epreis + rabatt)
+          example: 2.20
+        bewertung:
+          type: integer
+          description: |
+            Rating bitmask:
+            - Bit 15 (32768): Position is ratable (`bewertbar`)
+            - Bits 0-4 (0-31): Rating value (`bewertet`)
+              - 0: Unrated
+              - 1: Bad (Schlecht)
+              - 2: Mediocre (Mittelmäßig)
+              - 4: Good (Gut)
+              - 8: Very good (Sehr gut)
+              - 16: Excellent (Ausgezeichnet)
+          example: 32772
+
+    RatingUpdateRequest:
+      type: object
+      description: Request to update a transaction position's rating
+      required: [id, bewertung]
+      properties:
+        id:
+          type: integer
+          description: Position record ID
+          example: 65
+        bewertung:
+          type: integer
+          description: |
+            Updated rating bitmask. The ratable bit (32768) is preserved;
+            only bits 0-4 are modified with the new rating value.
+          example: 32772
+
+    BonusItem:
+      type: object
+      description: A single bonus program item (raw server response)
+      properties:
+        id:
+          type: integer
+          description: Bonus program ID
+          example: 50
+        typName:
+          type: string
+          description: Type name
+          example: "Bonus"
+        name:
+          type: string
+          description: Full program name
+          example: "PayPal Startguthaben"
+        kurzname:
+          type: string
+          description: Short program name
+          example: "PayPal"
+        gueltigVon:
+          type: string
+          description: Valid from date (dd.MM.yyyy)
+          example: "10.05.2025"
+        gueltigBis:
+          type: string
+          description: Valid until date (dd.MM.yyyy)
+          example: "10.05.2026"
+        anzahl:
+          type: integer
+          description: Total quantity available in the program
+          example: 5000
+        restanzahl:
+          type: integer
+          description: Remaining quantity available
+          example: 4994
+        punkte:
+          type: integer
+          description: Points per item/action
+          example: 1
+        status:
+          type: string
+          description: Program status text
+          example: "Aktiv"
+        posId:
+          type: integer
+          description: Position identifier
+          example: 9
+        posName:
+          type: string
+          description: Position name
+          example: "Startguthaben"
+        abPunkte:
+          type: integer
+          description: Points required for redemption
+          example: 1
+        betrag:
+          type: number
+          description: Monetary value in EUR
+          example: 10.00
+        aktPunkte:
+          type: integer
+          description: Current accumulated points
+          example: 1
+        aktDatum:
+          type: string
+          description: Last activity date (dd.MM.yyyy HH:mm:ss)
+          example: "12.05.2025 19:26:52"
+        fehlPunkte:
+          type: integer
+          description: Missing points until redemption
+          example: 0
+        aktStatus:
+          type: integer
+          description: |
+            Activity status:
+            - 0: Redeemable (Einlösbar)
+            - 1: Open (Offen)
+            - 2: Redeemed (Eingelöst)
+          enum: [0, 1, 2]
+          example: 2
+        aktStatusName:
+          type: string
+          description: Status display name
+          enum: [Einlösbar, Offen, Eingelöst]
+          example: "Eingelöst"
+        einloeseInfo:
+          type: string
+          nullable: true
+          description: Redemption info (register/location)
+          example: "Kasse 1 (1-8-1)"
+        hinweiseExtern:
+          type: string
+          nullable: true
+          description: External notes/hints displayed to the user
+          example: "Dies sind die externen Hinweise, welche sich auf den aktuellen Bonus beziehen."
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+        responseText:
+          type: string
+          description: Human-readable error message
