@@ -2,16 +2,19 @@ openapi: 3.0.3
 info:
   title: Kartenservice REST API
   description: |
-    REST API for the Kartenservice (Card Service) web application used by German student unions
-    (Studentenwerk) to manage prepaid chipcard accounts. The API supports authentication, card
-    management, transaction queries, bonus programs, recharge setup (SEPA/PayPal), and receipt
-    PDF downloads.
+    REST API for the Kartenservice (Card Service) web application used by Leipzig student union (Studentenwerk) to manage prepaid chipcard accounts.  
+    The API supports authentication, card management, transaction queries, bonus programs, recharge setup (SEPA/PayPal), and receipt PDF downloads.
 
-    All endpoints under `/TL1/TLM/KASVC/` require a valid `authToken` obtained during login.
-    The `karteNr` parameter is also appended to all authenticated requests.
+    All endpoints under `/TL1/TLM/KASVC/` require a valid `authToken` obtained during login.  
+    The `karteNr` parameter is also appended to all authenticated requests.  
+
+    This specification is based on analysis of the web application's network traffic and the code of the web application client itself, as the backend service is not publicly documented. It may not cover all edge cases or undocumented features of the API, but it provides a comprehensive reference for the main functionality used by the client application.
+
+    **Disclaimer**: Parts of this specification were generated with the assistance of **AI** based on observed API behavior and may contain inaccuracies. Please refer to the actual API responses and client code for precise details.
   version: 3.3.3.2
   contact:
-    name: Kartenservice
+    name: GitHub Repository of this Specification
+    url: "https://github.com/natureFrameworkManager/kartenservice"
 
 servers:
   - url: https://kartenservice.studentenwerk-leipzig.de
@@ -44,8 +47,8 @@ paths:
       summary: Register REST client
       description: |
         Registers the client application with the TL1 REST backend.
-        Must be called before any other API requests. Returns an auth token
-        that enables subsequent REST operations.
+        Is called by the application before any other request, even before login.
+        This endpoints returns only on error messages a response body, otherwise just the status code 201 Created.
       operationId: registerClient
       security:
         - basicAuth: []
@@ -130,7 +133,7 @@ paths:
           description: The card number (digits only)
         - name: datenformat
           in: query
-          required: false
+          required: true
           schema:
             type: string
             enum: [JSON]
@@ -276,6 +279,9 @@ paths:
       description: |
         Retrieves individual line items (positions) for transactions in the specified
         date range. These are joined client-side with transaction records via `transFullId`.
+
+        The start date is limited by the `lTransTage` value from the login response, which defines how many days of transaction history are available.
+        Any request for a date range will only return data to earliest available date based on this limit. For example, if `lTransTage` is 180 and today is 17.04.2026, the earliest available date would be 20.10.2025. Requests with `datumVon` before that will simply return no data for the unavailable period, but will not result in an error.
       operationId: getTransactionPositions
       parameters:
         - $ref: "#/components/parameters/karteNr"
@@ -510,12 +516,16 @@ components:
       type: http
       scheme: basic
       description: |
-        Static service credentials: `KASVC:zKv5yE1LZUmvW29I`
+        Static service credentials:  
+        Username: `KASVC`   
+        Password: `zKv5yE1LZUmvW29I`   
         (Base64: `S0FTVkM6ekt2NXlFMUxaVW12VzI5SQ==`)
     authToken:
       type: apiKey
       in: query
       name: authToken
+      description: |
+        Session token obtained from the login response. Must be included in all authenticated requests as a query parameter.
 
   parameters:
     karteNr:
