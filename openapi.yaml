@@ -146,7 +146,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LoginResponse"
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Invalid card number or password.
           content:
@@ -181,7 +183,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CardInfo"
+                type: array
+                items:
+                  $ref: "#/components/schemas/CardInfo"
         "401":
           description: Not authenticated or session expired
         "403":
@@ -603,7 +607,9 @@ components:
           oneOf:
             - type: boolean
             - type: string
-          description: Whether SEPA registration can omit account holder name.
+            - type: integer
+              enum: [0, 1]
+          description: Whether SEPA registration can omit account holder name. Values may be boolean, string, or 0/1.
           example: false
         lTransTage:
           type: integer
@@ -678,20 +684,32 @@ components:
           description: Total number of transactions on this card
           example: 145
         gesperrt:
-          type: boolean
-          description: Whether the card payment function is locked
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether the card payment function is locked (boolean or 0/1)
           example: false
         bankeinzug:
-          type: boolean
-          description: Whether SEPA direct debit is active
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether SEPA direct debit is active (boolean or 0/1)
           example: true
         internet:
-          type: boolean
-          description: Whether internet access is enabled for this card
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether internet access is enabled for this card (boolean or 0/1)
           example: true
         payPal:
-          type: boolean
-          description: Whether PayPal billing agreement is active
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether PayPal billing agreement is active (boolean or 0/1)
           example: false
         payPalSaldo:
           type: number
@@ -699,15 +717,24 @@ components:
           description: Current PayPal balance in EUR
           example: 0
         einmalzahlung:
-          type: boolean
-          description: Whether a one-time payment is currently authorized
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: Whether a one-time payment is currently authorized (boolean or 0/1)
           example: false
         einmalzahlungPayPal:
-          type: boolean
-          description: One-time PayPal payment active (server-side field, decomposed into payPal + einmalzahlung)
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: One-time PayPal payment active (server-side field, decomposed into payPal + einmalzahlung) (boolean or 0/1)
         einmalzahlungLastschrift:
-          type: boolean
-          description: One-time SEPA payment active (server-side field, decomposed into bankeinzug + einmalzahlung)
+          oneOf:
+            - type: boolean
+            - type: integer
+              enum: [0, 1]
+          description: One-time SEPA payment active (server-side field, decomposed into bankeinzug + einmalzahlung) (boolean or 0/1)
         blz:
           type: string
           nullable: true
@@ -731,9 +758,11 @@ components:
           nullable: true
           description: SEPA creditor identifier
         sepaMandat:
-          type: string
+          oneOf:
+            - type: integer
+            - type: string
           nullable: true
-          description: SEPA mandate number
+          description: SEPA mandate number (may be numeric or string)
         agreementId:
           type: string
           nullable: true
