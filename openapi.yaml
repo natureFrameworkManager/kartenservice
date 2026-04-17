@@ -65,7 +65,7 @@ paths:
             example: "4G3hQj7E5ivIzbXNlt4Eu8rLvRb3Dy4g"
           description: Client registration key
       responses:
-        "200":
+        "201":
           description: Client registered successfully. REST operations enabled.
         "401":
           description: Invalid client ID or registration key.
@@ -157,6 +157,13 @@ paths:
           description: Card internet access is not active.
         "408":
           description: Login request timed out.
+        "599":
+          description: Non-standard forbidden response observed from backend.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Forbidden"
 
   /TL1/TLM/KASVC/KARTE:
     get:
@@ -177,6 +184,8 @@ paths:
                 $ref: "#/components/schemas/CardInfo"
         "401":
           description: Not authenticated or session expired
+        "403":
+          description: Forbidden - access denied
         "404":
           description: Card not found
 
@@ -255,6 +264,8 @@ paths:
                   $ref: "#/components/schemas/Transaction"
         "401":
           description: Not authenticated or session expired
+        "403":
+          description: Forbidden - access denied
 
   /TL1/TLM/KASVC/TRANSPOS:
     get:
@@ -293,6 +304,8 @@ paths:
                   $ref: "#/components/schemas/TransactionPosition"
         "401":
           description: Not authenticated or session expired
+        "403":
+          description: Forbidden - access denied
 
     put:
       tags: [Transactions]
@@ -338,6 +351,8 @@ paths:
                   $ref: "#/components/schemas/BonusItem"
         "401":
           description: Not authenticated or session expired
+        "403":
+          description: Forbidden - access denied
 
   /TL1/TLM/KASVC/KATRPDF:
     get:
@@ -378,8 +393,17 @@ paths:
                 format: binary
         "401":
           description: Invalid or expired authentication
+        "403":
+          description: Forbidden - access denied
         "404":
           description: Receipt not found
+        "500":
+          description: Server error. Response body contains error message text.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Ungültige Zahl"
 
   /TL1/PayPal/agreement:
     get:
@@ -407,6 +431,8 @@ paths:
       responses:
         "302":
           description: Redirect to PayPal authorization page
+        "400":
+          description: Bad Request
 
   /TL1/PayPal/agreement/remove:
     put:
@@ -452,6 +478,8 @@ paths:
       responses:
         "302":
           description: Redirect to PayPal authorization page
+        "400":
+          description: Bad Request
 
   /TL1/PayPal/singlepayment/remove:
     put:
